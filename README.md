@@ -41,7 +41,7 @@ pip install -r requirements.txt
 ### Cloning the Repository
 
 ```bash
-git clone https://github.com/<your-username>/vehicle-data-analytics.git
+git clone https://github.com/palakvanp/vehicle-data-analytics.git
 cd vehicle-data-analytics
 ```
 
