@@ -1,3 +1,4 @@
+# ---------------------- Imports ----------------------
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -5,25 +6,20 @@ import plotly.express as px
 from io import BytesIO
 import json
 import os
-import sqlite3
-import pandas as pd
-import streamlit as st
 import re
-import plotly.express as px
-import json
 from difflib import get_close_matches
 from xlsxwriter import Workbook
 
-
-
 # ---------------------- Config ----------------------
-st.set_page_config(page_title="Vehicle Dashboard India", layout="wide")
+st.set_page_config(page_title="Vehicle Dashboard India", layout="wide")  # Set Streamlit page configuration
 
 # ---------------------- DB Connection ----------------------
 @st.cache_data
 def load_data(query):
-    with sqlite3.connect(r"vehicle_analysis_1.db") as conn:
+    # Load data from SQLite DB with caching
+    with sqlite3.connect(r"vehicle_analysis_1.db") as conn: # change the path if required
         df = pd.read_sql_query(query, conn)
+        # Remove rows where values are identical to column names (data cleaning)
         for col in ['row_value', 'column_value']:
             if col in df.columns:
                 df = df[df[col] != col]
@@ -32,7 +28,8 @@ def load_data(query):
 # ---------------------- Setup: Load State Mapping ----------------------
 @st.cache_data
 def load_state_rto_mapping():
-    with open("state_rto_data.json", "r") as f:
+    # Load mapping of state codes to full names and RTOs from JSON
+    with open("state_rto_data.json", "r") as f: # change the path if required
         data = json.load(f)
         return {
             entry["State Code"]: {
@@ -45,15 +42,16 @@ def load_state_rto_mapping():
 state_rto_map = load_state_rto_mapping()
 abbr_to_full = {abbr: info["state_name"] for abbr, info in state_rto_map.items()}
 
-# Utility function
+# ---------------------- Utility: Load CSV Data ----------------------
 def load_csv_data(folder_path):
+    # Load and concatenate all CSVs in given folder
     all_data = []
     for filename in os.listdir(folder_path):
         if filename.endswith(".csv"):
             file_path = os.path.join(folder_path, filename)
             try:
                 df = pd.read_csv(file_path)
-                df = df.iloc[:-1]
+                df = df.iloc[:-1]  # Remove last row (summary/total row if present)
                 year = filename.split('_')[-1].replace('.csv', '')
                 df['year'] = year
                 all_data.append(df)
@@ -61,18 +59,18 @@ def load_csv_data(folder_path):
                 pass
     return pd.concat(all_data, ignore_index=True) if all_data else None
 
-
+# ---------------------- Main Dashboard ----------------------
 def dashboard_overview(): 
     st.title("📊 Vehicle Registration Summary")
 
-    # Load data
-    df_total = load_csv_data(r"DataBase\Excel files\state_wise_total")
-    df_ev = load_csv_data(r"DataBase\Excel files\State_wise_total(EV)")
+    # Load required datasets
+    df_total = load_csv_data(r"DataBase\Excel files\state_wise_total") # change the path if required
+    df_ev = load_csv_data(r"DataBase\Excel files\State_wise_total(EV)") # change the path if required
     df_fuel = load_data("SELECT * FROM fuel_vs_state")
     df_class = load_data("SELECT * FROM vehicle_class_vs_state")
     df_cat = load_data("SELECT * FROM vehicle_category_group_vs_state")
 
-    # Clean the data
+    # Convert relevant columns to numeric type for analysis
     df_total['count'] = pd.to_numeric(df_total['Total Consolidated'], errors='coerce').fillna(0)
     df_ev['count'] = pd.to_numeric(df_ev['Total Consolidated'], errors='coerce').fillna(0)
     df_fuel['count'] = pd.to_numeric(df_fuel['count'], errors='coerce').fillna(0)
@@ -82,17 +80,18 @@ def dashboard_overview():
     df_total['year'] = pd.to_numeric(df_total['year'], errors='coerce')
     df_ev['year'] = pd.to_numeric(df_ev['year'], errors='coerce')
 
-    # National totals
+    # Compute national statistics
     total_count = df_total['count'].sum()
     total_ev = df_ev['count'].sum()
     ev_share = round((total_ev / total_count) * 100, 2) if total_count else 0
 
+    # Display key metrics
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Vehicles", f"{int(total_count):,}")
     col2.metric("EV Registered", f"{int(total_ev):,}")
     col3.metric("EV Share", f"{ev_share}%")
 
-    # 1. Year-wise state-wise registration graph
+    # ---------------------- Year-wise State Registration ----------------------
     if not df_total.empty:
         min_year_total, max_year_total = int(df_total["year"].min()), int(df_total["year"].max())
         selected_years_total = st.slider("Select Year Range for Registration", min_year_total, max_year_total, (min_year_total, max_year_total))
@@ -102,7 +101,7 @@ def dashboard_overview():
     else:
         st.warning("No data available for year-wise registration.")
 
-    # 2. Fuel type trend
+    # ---------------------- Fuel Type Trend ----------------------
     fuel_types = sorted(df_fuel['row_value'].dropna().unique())
     fuel_options = ["Select All"] + fuel_types
     selected_fuel_types = st.multiselect("Select Fuel Type(s)", fuel_options, help="Select 'Select All' to include all fuel types")
@@ -114,7 +113,7 @@ def dashboard_overview():
         fig2 = px.area(df_fuel_grouped, x="year", y="count", color="row_value", title="National Fuel Type Trend Over Years")
         st.plotly_chart(fig2, use_container_width=True)
 
-    # 3. Vehicle class trend
+    # ---------------------- Vehicle Class Trend ----------------------
     vehicle_classes = sorted(df_class['row_value'].dropna().unique())
     class_options = ["Select All"] + vehicle_classes
     selected_vehicle_classes = st.multiselect("Select Vehicle Class(es)", class_options, help="Select 'Select All' to include all classes")
@@ -126,7 +125,7 @@ def dashboard_overview():
         fig3 = px.area(df_class_grouped, x="year", y="count", color="row_value", title="Vehicle Class Trend Across India")
         st.plotly_chart(fig3, use_container_width=True)
 
-    # 4. EV adoption graph
+    # ---------------------- EV Adoption by State ----------------------
     ev_states = sorted(df_ev['State'].dropna().unique())
     ev_options = ["Select All"] + ev_states
     selected_ev_states = st.multiselect("Select States for EV Adoption", ev_options, help="Select 'Select All' to include all states")
@@ -138,18 +137,19 @@ def dashboard_overview():
         fig5 = px.bar(df_ev_statewise, x="State", y="count", title="Top 10 States by EV Registration")
         st.plotly_chart(fig5, use_container_width=True)
 
-        # 5. EV vs. Total Vehicle Registrations Over Time
+        # ---------------------- EV vs Total Registration Over Time ----------------------
         df_ev_vs_total = df_ev_filtered.groupby("year")["count"].sum().reset_index()
         df_total_vs_ev = pd.merge(df_total.groupby("year")['count'].sum().reset_index(), df_ev_vs_total, on="year", suffixes=('_total', '_ev'))
         fig6 = px.line(df_total_vs_ev, x="year", y=["count_total", "count_ev"], title="EV vs Total Vehicle Registrations Over Time")
         st.plotly_chart(fig6, use_container_width=True)
 
 
+# ---------------------- EV Insights ----------------------
 def ev_insights():
     st.title("⚡ Electric Vehicle (EV) Analysis")
 
     # Load State Abbreviation Mapping from JSON
-    with open("state_rto_data.json", "r") as f:
+    with open("state_rto_data.json", "r") as f: # change the path if required
         state_data = json.load(f)
 
     state_code_to_name = {
@@ -190,7 +190,7 @@ def ev_insights():
     fig2 = px.line(ev_growth, x="year", y="count", title="Total EVs Registered per Year in India")
     st.plotly_chart(fig2, use_container_width=True)
 
-
+# ---------------------- Fuel-Norm Distribution ----------------------
 def fuel_norm_distribution_dashboard(root_dir, state_mapping_file, start_year=2009, end_year=2025):
     
     # Folder paths
@@ -282,7 +282,7 @@ def fuel_norm_distribution_dashboard(root_dir, state_mapping_file, start_year=20
     with tab3:
         st.subheader("Norm Emissions by Fuel Type and Year")
 
-        base_path = r"DataBase\data"
+        base_path = r"DataBase\data" # change the path if required
         fuel_vs_norm_path = os.path.join(base_path, "Fuel_vs_Norm")
         norm_vs_category_path = os.path.join(base_path, "norm_vs_category")
 
@@ -394,6 +394,7 @@ def fuel_norm_distribution_dashboard(root_dir, state_mapping_file, start_year=20
                         file_name="filtered_emission_data.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+# ---------------------- vehicle Class & Vehicle Category ----------------------
 def vehicle_class_category():
     st.title("🚗 Vehicle Class & Category")
      # Load data
@@ -479,7 +480,7 @@ def vehicle_class_category():
             file_name=f"{selected_state}_vehicle_category_data.csv",
             mime="text/csv")
 
-
+# ---------------------- Ask With LLM ----------------------
 def ask_with_llm():
     """
     Single function to run the entire Streamlit dashboard:
@@ -489,8 +490,8 @@ def ask_with_llm():
     - Allows download of resulting data
     """
     # ---------- CONFIG ----------
-    DATABASE_PATH  = r"DataBase\vehicle_analysis_1.db"
-    STATE_RTO_JSON = r"State_RTO_mapping\state_rto_data.json"
+    DATABASE_PATH  = r"DataBase\vehicle_analysis_1.db" # change the path if required
+    STATE_RTO_JSON = r"State_RTO_mapping\state_rto_data.json" # change the path if required
 
     TABLE_MAPPINGS = {
         'fuel':    {'state': 'fuel_vs_state',                   'state_ev': 'fuel_vs_stateev',                   'rto': 'fuel_vs_rto',                   'rto_ev': 'fuel_vs_rtoev'},
@@ -696,8 +697,8 @@ elif section == "EV Insights":
     ev_insights()
 elif section == "Fuel Norm Analysis(StateWise)":
     fuel_norm_distribution_dashboard(
-    root_dir=r"DataBase\data", 
-    state_mapping_file=r'State_RTO_Mapping\state_rto_data.json'
+    root_dir=r"DataBase\data", # change the path if required
+    state_mapping_file=r'State_RTO_Mapping\state_rto_data.json' # change the path if required
 )
 elif section == "Vehicle Class & Category":
     vehicle_class_category()
